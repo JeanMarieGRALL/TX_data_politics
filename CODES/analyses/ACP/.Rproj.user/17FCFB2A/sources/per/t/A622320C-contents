@@ -1,0 +1,85 @@
+library(FactoMineR)
+library(factoextra)
+library(data.table)
+library(corrplot)
+library(ggplot2)
+library(dplyr)
+library(shiny)
+library(FactoInvestigate)
+library(Factoshiny)
+library(candisc)
+library(MASS)
+``
+# chargement des données --------------------------------------------------
+delits_21 <- readRDS("../../DATA/delits_21.rds")
+delits_21 = delits_21[,.(nb_delits = sum(nb)),"code_commune"]
+emploi_2017 <- readRDS("../../DATA/emploi_2017.rds")
+logement_2017_2_relatif <- readRDS("../../DATA/logement_2017_2_relatif.rds")
+prix_m2_commune <- readRDS("../../DATA/prix_m2_commune.rds")
+resultats_t2_2017 <- readRDS("../../DATA/resultats2_2017.rds")
+resultats_t1_2022 <- readRDS("../../DATA/resultats_t1_P2022.rds")
+rfr_commune <- readRDS("../../DATA/rfr_2019_commune.rds")
+popu_commune <- readRDS("../../DATA/popu_commune_2019.rds")
+
+res_t1_2022_unmelted = resultats_t1_2022
+setDT(res_t1_2022_unmelted)
+res_t1_2022_unmelted = dcast(data = res_t1_2022_unmelted, formula = code_commune~candidat, fun.aggregate = sum, value.var = "voix")
+setDF(res_t1_2022_unmelted)
+res_t1_2022_unmelted[,setdiff(names(res_t1_2022_unmelted), c("code_commune", 'abstentions', "nuls", "blancs"))] = res_t1_2022_unmelted[,setdiff(names(res_t1_2022_unmelted), c("code_commune", 'abstentions', "nuls", "blancs"))]/rowSums(res_t1_2022_unmelted[,setdiff(names(res_t1_2022_unmelted), c("code_commune", 'abstentions', "nuls", "blancs"))])
+
+
+resultats_t2_2017 <- rename(resultats_t2_2017, code_commune = code)
+logement_2017_2_relatif <- rename(logement_2017_2_relatif, code_commune = code_com)
+
+dataset <- merge(resultats_t2_2017, emploi_2017, by = "code_commune", all.x = TRUE)
+dataset <- merge(dataset, prix_m2_commune, by = "code_commune", all.x = TRUE)
+dataset <- merge(dataset, logement_2017_2_relatif, by = "code_commune", all.x = TRUE)
+dataset <- merge(dataset, rfr_commune, by = "code_commune", all.x = TRUE)
+dataset <- merge(dataset, popu_commune, by = "code_commune", all.x = TRUE)
+dataset <- merge(dataset, res_t1_2022_unmelted, by = "code_commune", all.x = TRUE)
+dataset <- merge(dataset, delits_21, by = "code_commune", all.x = TRUE)
+row.names(dataset) = dataset$code_commune
+
+dataset$p_blancs <- 100 * dataset$Blancs / dataset$Inscrits
+dataset$p_abstentions <- 100 * dataset$Abstentions / dataset$Inscrits
+dataset$p_nuls <- 100 * dataset$Nuls / dataset$Inscrits
+
+dataset$nb_delits_p_1000 = round(1000 * (dataset$nb_delits / dataset$popu),1)
+
+# corrélations ------------------------------------------------------------
+names(dataset)
+variables_acp = c("p_chom_15_64",
+                  #"p_CS1_15_64",
+                  "p_CS3_15_64",
+                  "p_CS6_15_64",
+                  "prix_moyen_m2",
+                  "%_av_1919",
+                  #"%_1919_1945",
+                  #"%_1946_1970",
+                  #"%_1971_1990",
+                  #"%_1991_2005",
+                  "%_ap_2006", 
+                  "%_locataires_HLM",
+                  "%_proprios",
+                  "%_res_secondaires",
+                  "%_appartements",
+                  "RFR_2019",
+                  "popu",
+                  "nb_delits_p_1000")
+for(var in variables_acp){
+  dataset = dataset[!is.na(dataset[var]),]
+}
+
+for(var in c("Emmanuel MACRON")){
+  dataset = dataset[!is.na(dataset[var]),]
+}
+
+mcor <- cor(dataset[, variables_acp], use = "complete.obs")
+melted_data <- melt(mcor)
+
+melted_data$value <- round(melted_data$value, 2)
+
+ggplot(data = melted_data, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() +  geom_text(aes(label = value), color = "white", size = 2) +
+  theme(axis.text.x = element_text(angle = 90))
+
